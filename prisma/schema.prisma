@@ -1,0 +1,168 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum PaperStatus {
+  QUEUED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum PageSource {
+  PDF_TEXT
+  OCR
+  MIXED
+  EMPTY
+}
+
+enum PaperSectionType {
+  writing
+  listening
+  reading_bank
+  reading_matching
+  reading_careful
+  translation
+  unknown
+}
+
+enum PaperBlockType {
+  heading
+  directions
+  passage
+  paragraph
+  question_group
+  question
+  option
+  word_bank
+  translation_prompt
+}
+
+enum JobStage {
+  QUEUED
+  PARSING
+  OCR
+  STRUCTURING
+  TRANSLATING
+  READY
+  FAILED
+}
+
+model Paper {
+  id               String      @id @default(cuid())
+  title            String
+  originalFileName String      @default("")
+  filePath         String
+  fileHash         String?
+  ownerId          String      @default("local")
+  status           PaperStatus @default(QUEUED)
+  progress         Int         @default(0)
+  error            String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  pages    Page[]
+  sections PaperSection[]
+  blocks   PaperBlock[]
+  job      ProcessingJob?
+
+  @@index([ownerId, createdAt])
+  @@index([ownerId, fileHash])
+}
+
+model Page {
+  id         String     @id @default(cuid())
+  paperId    String
+  pageNumber Int
+  rawText    String     @default("")
+  ocrText    String?
+  source     PageSource @default(PDF_TEXT)
+  confidence Float?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([paperId, pageNumber])
+  @@index([paperId])
+}
+
+model PaperSection {
+  id         String           @id @default(cuid())
+  paperId    String
+  type       PaperSectionType @default(unknown)
+  title      String
+  subtitle   String?
+  pageStart  Int?
+  pageEnd    Int?
+  orderIndex Int
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  paper  Paper        @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  blocks PaperBlock[]
+
+  @@index([paperId, orderIndex])
+  @@index([paperId, type])
+}
+
+model PaperBlock {
+  id               String         @id @default(cuid())
+  paperId          String
+  sectionId        String
+  blockType        PaperBlockType @default(paragraph)
+  questionNumber   Int?
+  optionLabel      String?
+  originalText     String
+  translatedText   String?
+  paragraphsJson   String?
+  translationError String?
+  pageNumber       Int
+  orderIndex       Int
+  textHash         String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  paper   Paper        @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  section PaperSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([paperId, orderIndex])
+  @@index([paperId, sectionId, orderIndex])
+  @@index([paperId, blockType])
+  @@index([questionNumber])
+  @@index([textHash])
+}
+
+model TranslationCache {
+  id          String   @id @default(cuid())
+  textHash    String
+  provider    String
+  model       String
+  style       String   @default("standard")
+  translation String
+  paragraphsJson String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([textHash, provider, model, style])
+  @@index([textHash])
+}
+
+model ProcessingJob {
+  id         String    @id @default(cuid())
+  paperId    String    @unique
+  stage      JobStage  @default(QUEUED)
+  progress   Int       @default(0)
+  error      String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+}

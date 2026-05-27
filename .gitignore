@@ -1,0 +1,13 @@
+.next
+node_modules
+storage
+.codex-artifacts
+.env
+.env.local
+dev-server*.log
+*.traineddata
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+*.tsbuildinfo
