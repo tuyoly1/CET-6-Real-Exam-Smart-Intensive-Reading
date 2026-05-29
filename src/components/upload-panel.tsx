@@ -182,14 +182,27 @@ export function UploadPanel() {
   }
 
   function addFiles(fileList: FileList | File[]) {
+    const existingKeys = new Set(jobsRef.current.map((job) => `${job.file.name}-${job.file.size}-${job.file.lastModified}`));
     const incoming = Array.from(fileList).filter((item) => item.name.toLowerCase().endsWith(".pdf") || item.type === "application/pdf");
+    const uniqueIncoming = incoming.filter((item) => {
+      const key = `${item.name}-${item.size}-${item.lastModified}`;
+      if (existingKeys.has(key)) return false;
+      existingKeys.add(key);
+      return true;
+    });
+
     if (incoming.length === 0) {
       setError("请选择 PDF 文件。");
       return;
     }
 
+    if (uniqueIncoming.length === 0) {
+      setError("这些 PDF 已经在导入队列里了。");
+      return;
+    }
+
     setError(null);
-    setJobs((current) => [...current, ...incoming.map((file, index) => createUploadJob(file, current.length + index))]);
+    setJobs((current) => [...current, ...uniqueIncoming.map((file, index) => createUploadJob(file, current.length + index))]);
   }
 
   function monitorPaper(jobId: string, paper: ExistingPaper) {
@@ -325,9 +338,17 @@ export function UploadPanel() {
     return Math.round(jobs.reduce((sum, job) => sum + job.percent, 0) / jobs.length);
   }, [jobs]);
   const pendingCount = jobs.filter((job) => job.status === "pending" || job.status === "failed").length;
+  const finishedCount = jobs.filter((job) => job.status === "ready" || job.status === "duplicate").length;
 
   return (
     <section className="panel upload-panel">
+      <div className="upload-panel-head">
+        <div>
+          <h2>批量导入</h2>
+          <p className="muted">真题和答案解析可以一起选，后台会排队处理。</p>
+        </div>
+        {jobs.length > 0 ? <span>{jobs.length} 个文件</span> : null}
+      </div>
       <label
         className="upload-target"
         onDragOver={(event) => event.preventDefault()}
@@ -339,8 +360,9 @@ export function UploadPanel() {
         <span className="upload-icon">
           <FileUp size={28} aria-hidden />
         </span>
-        <strong>{jobs.length > 0 ? `已选择 ${jobs.length} 个 PDF` : "拖入 PDF 或选择文件"}</strong>
-        <span className="muted">支持一次选择多个 PDF，导入后逐个排队解析</span>
+        <strong>{jobs.length > 0 ? `队列里有 ${jobs.length} 个 PDF` : "拖入 PDF 到这里"}</strong>
+        <span className="muted">或点击选择多个 PDF</span>
+        <span className="upload-pick-button">选择 PDF 文件</span>
         <input
           ref={inputRef}
           type="file"
@@ -357,7 +379,9 @@ export function UploadPanel() {
         <div className="batch-upload-panel" role="status" aria-live="polite">
           <div className="upload-progress-head">
             <strong>批量导入进度</strong>
-            <span>{overallPercent}%</span>
+            <span>
+              {finishedCount}/{jobs.length} 完成 · {overallPercent}%
+            </span>
           </div>
           <div className="upload-progress-track" aria-label="批量导入总进度">
             <div className="upload-progress-bar" style={{ width: `${overallPercent}%` }} />
@@ -417,6 +441,11 @@ export function UploadPanel() {
           {isSubmitting ? <Loader2 size={18} aria-hidden /> : <Upload size={18} aria-hidden />}
           {isSubmitting ? "提交中" : pendingCount > 1 ? `导入 ${pendingCount} 个 PDF` : "上传并解析"}
         </button>
+        {jobs.length > 0 && pendingCount > 0 ? (
+          <button className="secondary-button" type="button" disabled={isSubmitting} onClick={() => setJobs([])}>
+            清空队列
+          </button>
+        ) : null}
         {jobs.some((job) => job.status === "ready" || job.status === "duplicate") ? (
           <button className="secondary-button" type="button" onClick={clearFinished}>
             清理已完成

@@ -120,12 +120,40 @@ button {
   padding: 18px;
 }
 
+.upload-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.upload-panel-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.upload-panel-head p {
+  margin: 4px 0 0;
+  line-height: 1.55;
+}
+
+.upload-panel-head > span {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #edf5f1;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .upload-target {
   display: grid;
-  min-height: 210px;
+  min-height: 176px;
   place-items: center;
-  gap: 12px;
-  padding: 24px;
+  gap: 10px;
+  padding: 20px;
   border: 1px dashed #9db7b1;
   border-radius: 8px;
   background: var(--panel-soft);
@@ -145,6 +173,19 @@ button {
   border-radius: 8px;
   background: #dff0ed;
   color: var(--accent-strong);
+}
+
+.upload-pick-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--text);
+  font-weight: 700;
 }
 
 .upload-progress {
@@ -501,14 +542,15 @@ button {
 }
 
 .paper-kind-group {
-  grid-template-columns: repeat(3, minmax(74px, auto));
+  grid-template-columns: repeat(3, minmax(96px, auto));
 }
 
 .paper-kind-group .mode-button {
   width: auto;
-  min-width: 74px;
+  min-width: 96px;
   padding: 0 12px;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .paper-group-list {
@@ -552,9 +594,14 @@ button {
   font-size: 13px;
 }
 
+.paper-kind-head strong,
+.paper-kind-head .muted {
+  white-space: nowrap;
+}
+
 .paper-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 10px;
 }
 
@@ -580,6 +627,7 @@ button {
 
 .paper-card-top .brand {
   min-width: 0;
+  width: 100%;
 }
 
 .paper-card-top .brand span {
@@ -593,6 +641,14 @@ button {
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
+}
+
+.paper-card-bottom {
+  margin-top: auto;
+}
+
+.paper-card-bottom .status-pill {
+  min-width: 74px;
 }
 
 .paper-card-bottom .secondary-button {
@@ -1825,6 +1881,14 @@ button {
   .paper-table th:nth-child(3),
   .paper-table td:nth-child(3) {
     display: none;
+  }
+
+  .paper-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .paper-kind-group .mode-button {
+    min-width: 0;
   }
 
   .study-section-header {

@@ -173,10 +173,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                                     <FileText size={18} aria-hidden />
                                     <span>{paper.title}</span>
                                   </Link>
-                                  <span className={`status-pill ${paper.status === "READY" ? "ready" : ""} ${paper.status === "FAILED" ? "failed" : ""}`}>
-                                    <StatusIcon status={paper.status} />
-                                    {statusLabel(paper.status)}
-                                  </span>
                                 </div>
                                 <div className="paper-card-meta">
                                   <span className="muted">{paperPeriodLabel(metadata)}</span>
@@ -197,6 +193,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                                   <p className="muted paper-error">{paper.error}</p>
                                 ) : null}
                                 <div className="paper-card-bottom">
+                                  <span className={`status-pill ${paper.status === "READY" ? "ready" : ""} ${paper.status === "FAILED" ? "failed" : ""}`}>
+                                    <StatusIcon status={paper.status} />
+                                    {statusLabel(paper.status)}
+                                  </span>
                                   <span className="muted">{paper.createdAt.toLocaleString("zh-CN")}</span>
                                   <Link href={`/papers/${paper.id}`} className="secondary-button">
                                     打开
