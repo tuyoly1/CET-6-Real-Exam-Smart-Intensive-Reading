@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPdftoppmArgs,
   detectGarbledText,
   extractTextFromPdfTextItems,
   normalizeExtractedText,
   normalizePdfTextItem,
+  resolvePdftoppmCommand,
   shouldRunOcr,
   sortTextItemsForReading
 } from "@/lib/pdf";
@@ -48,5 +50,39 @@ describe("PDF text extraction quality", () => {
     expect(normalizeExtractedText("three or f our questions\nfo llowing passage\nPart 1V Translation")).toBe(
       "three or four questions\nfollowing passage\nPart IV Translation"
     );
+  });
+
+  it("builds a Poppler pdftoppm fallback command for one target page", () => {
+    const oldPath = process.env.PDFTOPPM_PATH;
+    const oldDpi = process.env.PDFTOPPM_DPI;
+    process.env.PDFTOPPM_PATH = "C:/poppler/bin";
+    process.env.PDFTOPPM_DPI = "216";
+
+    try {
+      expect(resolvePdftoppmCommand().replace(/\\/g, "/")).toBe("C:/poppler/bin/pdftoppm.exe");
+      expect(buildPdftoppmArgs("D:/paper.pdf", 3, "C:/tmp/page")).toEqual([
+        "-f",
+        "3",
+        "-l",
+        "3",
+        "-r",
+        "216",
+        "-png",
+        "D:/paper.pdf",
+        "C:/tmp/page"
+      ]);
+    } finally {
+      if (oldPath === undefined) {
+        delete process.env.PDFTOPPM_PATH;
+      } else {
+        process.env.PDFTOPPM_PATH = oldPath;
+      }
+
+      if (oldDpi === undefined) {
+        delete process.env.PDFTOPPM_DPI;
+      } else {
+        process.env.PDFTOPPM_DPI = oldDpi;
+      }
+    }
   });
 });

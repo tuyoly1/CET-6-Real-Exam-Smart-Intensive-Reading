@@ -1,9 +1,13 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { createCanvas, DOMMatrix, DOMPoint, Path2D } from "@napi-rs/canvas";
 import type { PageSource } from "@prisma/client";
 import type { PDFPageProxy, RenderParameters } from "pdfjs-dist/types/src/display/api";
+
+const execFileAsync = promisify(execFile);
 
 export type ExtractedPage = {
   pageNumber: number;
@@ -392,7 +396,60 @@ export function shouldRunOcr(text: string) {
   return detectGarbledText(text).garbled;
 }
 
-async function renderPageToPng(page: PDFPageProxy) {
+function pdftoppmDpi() {
+  const value = Number(process.env.PDFTOPPM_DPI);
+  if (Number.isFinite(value) && value >= 72 && value <= 600) return Math.round(value);
+  return Math.round(144 * ocrScale());
+}
+
+export function resolvePdftoppmCommand() {
+  const configured = process.env.PDFTOPPM_PATH?.trim();
+  if (!configured) return "pdftoppm";
+
+  const lower = configured.toLowerCase();
+  if (lower.endsWith("pdftoppm") || lower.endsWith("pdftoppm.exe")) return configured;
+
+  return path.join(configured, process.platform === "win32" ? "pdftoppm.exe" : "pdftoppm");
+}
+
+export function buildPdftoppmArgs(filePath: string, pageNumber: number, outputPrefix: string) {
+  return [
+    "-f",
+    String(pageNumber),
+    "-l",
+    String(pageNumber),
+    "-r",
+    String(pdftoppmDpi()),
+    "-png",
+    filePath,
+    outputPrefix
+  ];
+}
+
+function isMissingExecutableError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
+}
+
+function pdftoppmErrorMessage(error: unknown) {
+  if (isMissingExecutableError(error)) {
+    return "pdftoppm is not installed or not in PATH. Install Poppler and set PDFTOPPM_PATH to the pdftoppm executable or Poppler bin directory.";
+  }
+
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+async function readGeneratedPng(tempDir: string) {
+  const entries = await readdir(tempDir);
+  const pngName = entries
+    .filter((entry) => entry.toLowerCase().endsWith(".png"))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))[0];
+
+  if (!pngName) throw new Error("pdftoppm did not create a PNG file");
+  return readFile(path.join(tempDir, pngName));
+}
+
+async function renderPageToPngWithPdfjs(page: PDFPageProxy) {
   installCanvasGlobals();
   const viewport = page.getViewport({ scale: ocrScale() });
   const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
@@ -409,10 +466,43 @@ async function renderPageToPng(page: PDFPageProxy) {
   return canvas.toBuffer("image/png");
 }
 
-async function recognizePage(page: PDFPageProxy) {
+async function renderPageToPngWithPdftoppm(filePath: string, pageNumber: number) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "cet6-pdftoppm-"));
+  const outputPrefix = path.join(tempDir, "page");
+
+  try {
+    await execFileAsync(resolvePdftoppmCommand(), buildPdftoppmArgs(filePath, pageNumber, outputPrefix), {
+      windowsHide: true,
+      timeout: 60_000,
+      maxBuffer: 1024 * 1024 * 8
+    });
+
+    return await readGeneratedPng(tempDir);
+  } catch (error) {
+    throw new Error(pdftoppmErrorMessage(error));
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function renderPageToPng(page: PDFPageProxy, filePath: string, pageNumber: number) {
+  try {
+    return await renderPageToPngWithPdfjs(page);
+  } catch (pdfjsError) {
+    try {
+      return await renderPageToPngWithPdftoppm(filePath, pageNumber);
+    } catch (pdftoppmError) {
+      const pdfjsMessage = pdfjsError instanceof Error ? pdfjsError.message : String(pdfjsError);
+      const pdftoppmMessage = pdftoppmError instanceof Error ? pdftoppmError.message : String(pdftoppmError);
+      throw new Error(`pdfjs render failed (${pdfjsMessage}); pdftoppm fallback failed (${pdftoppmMessage})`);
+    }
+  }
+}
+
+async function recognizePage(page: PDFPageProxy, filePath: string, pageNumber: number) {
   const Tesseract = await import("tesseract.js");
   const recognize = Tesseract.recognize ?? Tesseract.default.recognize;
-  const png = await renderPageToPng(page);
+  const png = await renderPageToPng(page, filePath, pageNumber);
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "cet6-ocr-"));
   const imagePath = path.join(tempDir, `page-${Date.now()}.png`);
 
@@ -461,7 +551,7 @@ export async function extractPdfPages(filePath: string, onProgress?: ProgressCal
     if (shouldRunOcr(rawText)) {
       let ocr: { text: string; confidence?: number };
       try {
-        ocr = await recognizePage(page);
+        ocr = await recognizePage(page, filePath, pageNumber);
       } catch (error) {
         if (!rawText || quality.garbled) {
           throw new Error(ocrErrorMessage(pageNumber, error));
