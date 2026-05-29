@@ -342,13 +342,6 @@ export function UploadPanel() {
 
   return (
     <section className="panel upload-panel">
-      <div className="upload-panel-head">
-        <div>
-          <h2>批量导入</h2>
-          <p className="muted">真题和答案解析可以一起选，后台会排队处理。</p>
-        </div>
-        {jobs.length > 0 ? <span>{jobs.length} 个文件</span> : null}
-      </div>
       <label
         className="upload-target"
         onDragOver={(event) => event.preventDefault()}
@@ -360,9 +353,8 @@ export function UploadPanel() {
         <span className="upload-icon">
           <FileUp size={28} aria-hidden />
         </span>
-        <strong>{jobs.length > 0 ? `队列里有 ${jobs.length} 个 PDF` : "拖入 PDF 到这里"}</strong>
-        <span className="muted">或点击选择多个 PDF</span>
-        <span className="upload-pick-button">选择 PDF 文件</span>
+        <strong>拖入多个 PDF 或选择文件</strong>
+        <span className="muted">支持批量导入真题和答案解析，队列会依次上传并显示处理进度</span>
         <input
           ref={inputRef}
           type="file"
@@ -439,7 +431,16 @@ export function UploadPanel() {
       <div className="button-row upload-actions">
         <button className="primary-button" type="button" disabled={pendingCount === 0 || isSubmitting} onClick={() => void uploadAll()}>
           {isSubmitting ? <Loader2 size={18} aria-hidden /> : <Upload size={18} aria-hidden />}
-          {isSubmitting ? "提交中" : pendingCount > 1 ? `导入 ${pendingCount} 个 PDF` : "上传并解析"}
+          {pendingCount === 0 ? "等待选择 PDF" : isSubmitting ? "导入中" : `导入 ${pendingCount} 个 PDF`}
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={isSubmitting}
+        >
+          <FileStack size={15} aria-hidden />
+          继续添加
         </button>
         {jobs.length > 0 && pendingCount > 0 ? (
           <button className="secondary-button" type="button" disabled={isSubmitting} onClick={() => setJobs([])}>

@@ -35,6 +35,7 @@ function StatusIcon({ status }: { status: string }) {
 type HomePageProps = {
   searchParams?: Promise<{
     kind?: string;
+    year?: string;
   }>;
 };
 
@@ -48,6 +49,7 @@ function kindLabel(kind: string) {
 export default async function HomePage({ searchParams }: HomePageProps) {
   const params = (await searchParams) ?? {};
   const kindFilter = params.kind === "exam" || params.kind === "answer" ? params.kind : "all";
+  const yearFilter = params.year && /^20\d{2}$/.test(params.year) ? params.year : "all";
   const translationConfig = getTranslationConfig();
   const translationStatus = translationProviderStatus();
   await prisma.$executeRaw`
@@ -91,28 +93,44 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
   });
 
-  const categorizedPapers = papers
-    .map((paper) => ({
-      paper,
-      metadata: inferPaperMetadata(paper.originalFileName || paper.title)
-    }))
-    .filter(({ metadata }) => kindFilter === "all" || metadata.kind === kindFilter);
+  const categorizedPapers = papers.map((paper) => ({
+    paper,
+    metadata: inferPaperMetadata(paper.originalFileName || paper.title)
+  }));
+
+  const examCount = categorizedPapers.filter(({ metadata }) => metadata.kind === "exam").length;
+  const answerCount = categorizedPapers.filter(({ metadata }) => metadata.kind === "answer").length;
+  const availableYears = [...new Set(categorizedPapers.map(({ metadata }) => metadata.year).filter((year) => year !== "未识别年份"))].sort(
+    (a, b) => b.localeCompare(a, "zh-Hans-CN", { numeric: true })
+  );
+  const filteredPapers = categorizedPapers.filter(
+    ({ metadata }) => (kindFilter === "all" || metadata.kind === kindFilter) && (yearFilter === "all" || metadata.year === yearFilter)
+  );
 
   const groups = new Map<
     string,
     {
       year: string;
-      papers: typeof categorizedPapers;
+      papers: typeof filteredPapers;
     }
   >();
 
-  for (const item of categorizedPapers) {
+  for (const item of filteredPapers) {
     const group = groups.get(item.metadata.year) ?? { year: item.metadata.year, papers: [] };
     group.papers.push(item);
     groups.set(item.metadata.year, group);
   }
 
   const orderedGroups = [...groups.values()].sort((a, b) => b.year.localeCompare(a.year, "zh-Hans-CN", { numeric: true }));
+  const filterHref = (next: { kind?: string; year?: string }) => {
+    const kind = next.kind ?? kindFilter;
+    const year = next.year ?? yearFilter;
+    const query = new URLSearchParams();
+    if (kind !== "all") query.set("kind", kind);
+    if (year !== "all") query.set("year", year);
+    const text = query.toString();
+    return text ? `/?${text}` : "/";
+  };
 
   return (
     <main className="home-grid">
@@ -121,94 +139,108 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <TranslationSettings initialConfig={translationConfig} initialStatus={translationStatus} />
       </div>
       <section className="panel history-panel">
-        <div className="section-header history-header">
+        <div className="section-header library-header">
           <div>
             <h1>我的试卷</h1>
-            <p className="muted">按年份和资料类型查看导入结果</p>
+            <p className="muted">按年份和真题 / 答案分类浏览</p>
           </div>
-          <div className="mode-group paper-kind-group" role="tablist" aria-label="列表分类">
-            {(["all", "exam", "answer"] as const).map((kind) => (
-              <Link key={kind} href={kind === "all" ? "/" : `/?kind=${kind}`} className={`mode-button ${kindFilter === kind ? "active" : ""}`}>
-                {kindLabel(kind)}
+          <span className="library-total">{papers.length}</span>
+        </div>
+        <div className="library-filters">
+          <div className="filter-row">
+            <span className="filter-label">类型</span>
+            <div className="filter-pills" role="tablist" aria-label="资料类型">
+              <Link href={filterHref({ kind: "all" })} className={`filter-pill ${kindFilter === "all" ? "active" : ""}`}>
+                全部 {papers.length}
               </Link>
-            ))}
+              <Link href={filterHref({ kind: "exam" })} className={`filter-pill ${kindFilter === "exam" ? "active" : ""}`}>
+                真题 {examCount}
+              </Link>
+              <Link href={filterHref({ kind: "answer" })} className={`filter-pill ${kindFilter === "answer" ? "active" : ""}`}>
+                答案 {answerCount}
+              </Link>
+            </div>
+          </div>
+          <div className="filter-row">
+            <span className="filter-label">年份</span>
+            <div className="filter-pills" role="tablist" aria-label="年份">
+              <Link href={filterHref({ year: "all" })} className={`filter-pill ${yearFilter === "all" ? "active" : ""}`}>
+                全部
+              </Link>
+              {availableYears.map((year) => (
+                <Link key={year} href={filterHref({ year })} className={`filter-pill ${yearFilter === year ? "active" : ""}`}>
+                  {year}
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="history-summary">
-          <span className="status-pill ready">{papers.length} 份资料</span>
-          <span className="muted">{kindLabel(kindFilter)} · {orderedGroups.length} 个年份分组</span>
-        </div>
-        {categorizedPapers.length === 0 ? (
+        {filteredPapers.length === 0 ? (
           <div className="empty-state">暂无试卷</div>
         ) : (
-          <div className="paper-group-list">
+          <div className="library-year-list">
             {orderedGroups.map((group) => {
-              const examCount = group.papers.filter(({ metadata }) => metadata.kind === "exam").length;
-              const answerCount = group.papers.filter(({ metadata }) => metadata.kind === "answer").length;
               return (
-                <section key={group.year} className="paper-year-group">
-                  <div className="paper-year-head">
-                    <div>
-                      <h2>{group.year} 年</h2>
-                      <p className="muted">
-                        {group.papers.length} 份 · 真题 {examCount} · 答案解析 {answerCount}
-                      </p>
-                    </div>
+                <section key={group.year} className="library-year-group">
+                  <div className="library-year-head">
+                    <h2>{group.year}</h2>
+                    <span>{group.papers.length} 份</span>
                   </div>
-                  <div className="paper-kind-sections">
-                    {(["exam", "answer", "other"] as const).map((kind) => {
-                      const kindPapers = group.papers.filter(({ metadata }) => metadata.kind === kind);
-                      if (kindPapers.length === 0) return null;
-                      return (
-                        <div key={kind} className="paper-kind-section">
-                          <div className="paper-kind-head">
-                            <strong>{kindLabel(kind)}</strong>
-                            <span className="muted">{kindPapers.length}</span>
-                          </div>
-                          <div className="paper-cards">
-                            {kindPapers.map(({ paper, metadata }) => (
-                              <article key={paper.id} className="paper-card">
-                                <div className="paper-card-top">
-                                  <Link href={`/papers/${paper.id}`} className="brand" title="打开试卷">
-                                    <FileText size={18} aria-hidden />
-                                    <span>{paper.title}</span>
-                                  </Link>
-                                </div>
-                                <div className="paper-card-meta">
-                                  <span className="muted">{paperPeriodLabel(metadata)}</span>
-                                  <span className="muted">
-                                    {paper._count.pages} 页 · {paper._count.sections} 节 · {paper._count.blocks} 个单元
-                                  </span>
-                                </div>
-                                {paper.status === "PROCESSING" || paper.status === "QUEUED" ? (
-                                  <div className="paper-progress-cell">
-                                    <div className="mini-progress-track" aria-label="处理进度">
-                                      <div className="mini-progress-bar" style={{ width: `${paper.progress}%` }} />
-                                    </div>
-                                    <span className="muted">
-                                      {stageLabel(paper.job?.stage)} · {paper.progress}%
-                                    </span>
+                  <table className="library-table">
+                    <thead>
+                      <tr>
+                        <th>名称</th>
+                        <th>分类</th>
+                        <th>状态</th>
+                        <th>内容</th>
+                        <th>时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.papers.map(({ paper, metadata }) => (
+                        <tr key={paper.id}>
+                          <td>
+                            <Link href={`/papers/${paper.id}`} className="library-title" title="打开试卷">
+                              <FileText size={15} aria-hidden />
+                              <span>{paper.title}</span>
+                            </Link>
+                            {paper.status === "FAILED" && paper.error ? <p className="paper-error muted">{paper.error}</p> : null}
+                          </td>
+                          <td>
+                            <div className="classification-stack">
+                              <span className="date-chip">{paperPeriodLabel(metadata).replace("年", "年").replace("月", "月")}</span>
+                              <span className={`type-chip ${metadata.kind}`}>{kindLabel(metadata.kind)}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="table-status-cell">
+                              <span className={`status-pill ${paper.status === "READY" ? "ready" : ""} ${paper.status === "FAILED" ? "failed" : ""}`}>
+                                <StatusIcon status={paper.status} />
+                                {statusLabel(paper.status)}
+                              </span>
+                              {paper.status === "PROCESSING" || paper.status === "QUEUED" ? (
+                                <>
+                                  <div className="mini-progress-track" aria-label="处理进度">
+                                    <div className="mini-progress-bar" style={{ width: `${paper.progress}%` }} />
                                   </div>
-                                ) : paper.status === "FAILED" && paper.error ? (
-                                  <p className="muted paper-error">{paper.error}</p>
-                                ) : null}
-                                <div className="paper-card-bottom">
-                                  <span className={`status-pill ${paper.status === "READY" ? "ready" : ""} ${paper.status === "FAILED" ? "failed" : ""}`}>
-                                    <StatusIcon status={paper.status} />
-                                    {statusLabel(paper.status)}
+                                  <span className="muted">
+                                    {stageLabel(paper.job?.stage)} · {paper.progress}%
                                   </span>
-                                  <span className="muted">{paper.createdAt.toLocaleString("zh-CN")}</span>
-                                  <Link href={`/papers/${paper.id}`} className="secondary-button">
-                                    打开
-                                  </Link>
-                                </div>
-                              </article>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                                </>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="library-content-cell">
+                            {paper._count.pages} 页 / {paper._count.sections} 节 / {paper._count.blocks} 个学习单元
+                          </td>
+                          <td className="library-time-cell">
+                            <span>{paper.createdAt.toLocaleDateString("zh-CN")}</span>
+                            <span>{paper.createdAt.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </section>
               );
             })}
