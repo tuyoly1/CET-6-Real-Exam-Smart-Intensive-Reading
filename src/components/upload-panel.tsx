@@ -42,6 +42,8 @@ type ProcessingStatusEvent = {
   error?: string;
 };
 
+const UPLOAD_PARALLELISM = 3;
+
 function formatSeconds(ms: number) {
   return `${Math.max(0, Math.floor(ms / 1000))} 秒`;
 }
@@ -320,10 +322,18 @@ export function UploadPanel() {
     const runnable = jobsRef.current.filter((job) => job.status === "pending" || job.status === "failed");
     if (runnable.length === 0) return;
     setIsSubmitting(true);
-    try {
-      for (const job of runnable) {
+    let nextIndex = 0;
+
+    async function worker() {
+      while (nextIndex < runnable.length) {
+        const job = runnable[nextIndex];
+        nextIndex += 1;
         await uploadJob(job.id);
       }
+    }
+
+    try {
+      await Promise.all(Array.from({ length: Math.min(UPLOAD_PARALLELISM, runnable.length) }, () => worker()));
     } finally {
       setIsSubmitting(false);
     }

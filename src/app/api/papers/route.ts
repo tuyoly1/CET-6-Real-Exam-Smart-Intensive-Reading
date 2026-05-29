@@ -7,6 +7,8 @@ import { ensureStorage, uploadPathFor } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
+let backfillMissingFileHashesPromise: Promise<void> | null = null;
+
 function sha256(bytes: Buffer) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -34,6 +36,17 @@ async function backfillMissingFileHashes() {
       // Missing old upload files should not block new uploads.
     }
   }
+}
+
+async function ensureBackfillMissingFileHashesOnce() {
+  if (!backfillMissingFileHashesPromise) {
+    backfillMissingFileHashesPromise = backfillMissingFileHashes().catch((error) => {
+      backfillMissingFileHashesPromise = null;
+      throw error;
+    });
+  }
+
+  return backfillMissingFileHashesPromise;
 }
 
 export async function GET() {
@@ -70,7 +83,7 @@ export async function POST(request: Request) {
 
   const bytes = Buffer.from(await file.arrayBuffer());
   const fileHash = sha256(bytes);
-  await backfillMissingFileHashes();
+  void ensureBackfillMissingFileHashesOnce().catch(() => undefined);
   const existingPaper = await prisma.paper.findFirst({
     where: {
       ownerId: "local",
