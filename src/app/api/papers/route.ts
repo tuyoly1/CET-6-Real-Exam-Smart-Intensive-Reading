@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { processPaper } from "@/lib/processor";
+import { enqueuePaperProcessing } from "@/lib/processing-queue";
 import { ensureStorage, uploadPathFor } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -110,11 +110,7 @@ export async function POST(request: Request) {
     }
   });
 
-  setImmediate(() => {
-    processPaper(paper.id).catch((error) => {
-      console.error("Paper processing failed", error);
-    });
-  });
+  setImmediate(() => enqueuePaperProcessing(paper.id));
 
   return NextResponse.json({ paper, duplicate: false }, { status: 201 });
 }
