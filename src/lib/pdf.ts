@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
 import type { PageSource } from "@prisma/client";
@@ -397,14 +398,22 @@ async function recognizePage(page: PDFPageProxy) {
   const Tesseract = await import("tesseract.js");
   const recognize = Tesseract.recognize ?? Tesseract.default.recognize;
   const png = await renderPageToPng(page);
-  const result = await recognize(png, "eng+chi_sim", {
-    logger: () => undefined
-  });
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "cet6-ocr-"));
+  const imagePath = path.join(tempDir, `page-${Date.now()}.png`);
 
-  return {
-    text: normalizeExtractedText(result.data.text),
-    confidence: result.data.confidence
-  };
+  try {
+    await writeFile(imagePath, png);
+    const result = await recognize(imagePath, "eng+chi_sim", {
+      logger: () => undefined
+    });
+
+    return {
+      text: normalizeExtractedText(result.data.text),
+      confidence: result.data.confidence
+    };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 export async function extractPdfPages(filePath: string, onProgress?: ProgressCallback) {
