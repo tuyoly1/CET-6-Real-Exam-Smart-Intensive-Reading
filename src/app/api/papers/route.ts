@@ -74,7 +74,8 @@ export async function POST(request: Request) {
   const existingPaper = await prisma.paper.findFirst({
     where: {
       ownerId: "local",
-      fileHash
+      fileHash,
+      status: { not: "FAILED" }
     },
     orderBy: { createdAt: "desc" }
   });

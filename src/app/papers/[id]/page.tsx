@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getTranslationConfig } from "@/lib/translation-config";
 import { translationProviderStatus } from "@/lib/translation";
 import { Reader } from "@/components/reader";
 
@@ -58,6 +59,7 @@ export default async function PaperPage({
         }))
       }))}
       initialTranslation={translationProviderStatus()}
+      initialTranslationConfig={getTranslationConfig()}
     />
   );
 }

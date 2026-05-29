@@ -82,7 +82,8 @@ const footerPatterns = [
   /^\d+$/,
   /^第\s*\d+\s*页\s*(?:共\s*\d+\s*页)?$/,
   /^\d{4}\s*年.*大学英语.*第\s*\d+\s*页\s*共\s*\d+\s*页/,
-  /^大学英语.*真题.*第\s*\d+\s*页/,
+  /^大学英语.*真[题感].*第\s*\d+\s*页/,
+  /^\d{4}\s*年.*英语\s*六\s*级\s*真[题感].*第\s*\d+\s*页\s*共\s*\d+\s*页/,
   /^Warning:\s+UnknownErrorException/i
 ];
 
@@ -92,12 +93,15 @@ export function normalizeCet6Line(text: string) {
     .replace(/\u00a0/g, " ")
     .replace(/[“”]/g, "\"")
     .replace(/[‘’]/g, "'")
+    .replace(/^Part\s+1\b/i, "Part I")
+    .replace(/^Part\s+I[Tl]\b/i, "Part II")
+    .replace(/^Part\s+Ill\b/i, "Part III")
     .replace(/Questionsl\b/gi, "Questions 1")
     .replace(/\bfo\s+llowing\b/gi, "following")
     .replace(/\bf\s+our\b/gi, "four")
     .replace(/\bTum\b/g, "Turn")
     .replace(/\b1s\b/g, "is")
-    .replace(/\d{4}\s*年\s*\d{1,2}\s*月\s*(?:大学)?\s*英语\s*六\s*级\s*真题.*?第\s*\d+\s*页\s*共\s*\d+\s*页/gi, "")
+    .replace(/\d{4}\s*年\s*\d{1,2}\s*月\s*(?:大学)?\s*英语\s*六\s*级\s*真[题感].*?第\s*\d+\s*页\s*共\s*\d+\s*页/gi, "")
     .replace(/([A-O])\)\s*/g, "$1) ")
     .replace(/\b(\d{1,2})\s+\./g, "$1.")
     .replace(/\s+([,.;:?!])/g, "$1")
@@ -381,7 +385,12 @@ export function parseCet6Paper(pages: ParserPageInput[]) {
     pageNumber: number,
     subtitle?: string
   ) {
-    flushBuffer();
+    const deferredBuffer = currentSection ? null : buffer;
+    if (currentSection) {
+      flushBuffer();
+    } else {
+      buffer = null;
+    }
     if (currentSection) {
       currentSection.pageEnd = Math.max(currentSection.pageEnd ?? pageNumber, pageNumber);
     }
@@ -401,6 +410,10 @@ export function parseCet6Paper(pages: ParserPageInput[]) {
     if (pendingPartHeading) {
       addBlock("heading", pendingPartHeading, pageNumber);
       pendingPartHeading = null;
+    }
+
+    if (deferredBuffer) {
+      addBlock(deferredBuffer.blockType, joinBufferedLines(deferredBuffer.lines), deferredBuffer.pageNumber);
     }
   }
 
@@ -452,6 +465,10 @@ export function parseCet6Paper(pages: ParserPageInput[]) {
 
   function flushBuffer() {
     if (!buffer) return;
+    if (!currentSection) {
+      buffer = null;
+      return;
+    }
     const text = joinBufferedLines(buffer.lines);
     addBlock(buffer.blockType, text, buffer.pageNumber);
     buffer = null;

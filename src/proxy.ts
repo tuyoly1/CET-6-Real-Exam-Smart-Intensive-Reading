@@ -16,9 +16,15 @@ function isApiPath(pathname: string) {
   return pathname.startsWith("/api/");
 }
 
+function isLoopbackHost(hostname: string) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   if (isPublicPath(pathname)) return NextResponse.next();
+  if (isLoopbackHost(request.nextUrl.hostname)) return NextResponse.next();
 
   const password = accessPassword();
   if (!password) return NextResponse.next();

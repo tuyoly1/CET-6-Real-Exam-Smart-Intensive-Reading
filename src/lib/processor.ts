@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { extractPdfPages, readablePageText } from "@/lib/pdf";
 import { translateAndCacheBlocks } from "@/lib/translation";
 
+function shouldAutoTranslateOnImport() {
+  return process.env.AUTO_TRANSLATE_ON_IMPORT === "true";
+}
+
 async function setProgress(
   paperId: string,
   stage: JobStage,
@@ -18,7 +22,7 @@ async function setProgress(
       data: {
         status,
         progress,
-        error
+        error: error ?? null
       }
     }),
     prisma.processingJob.upsert({
@@ -33,7 +37,7 @@ async function setProgress(
       update: {
         stage,
         progress,
-        error,
+        error: error ?? null,
         startedAt: stage === "PARSING" ? new Date() : undefined,
         finishedAt: status === "READY" || status === "FAILED" ? new Date() : undefined
       }
@@ -114,8 +118,12 @@ export async function processPaper(paperId: string) {
       }
     }
 
-    await setProgress(paperId, "TRANSLATING", 72);
-    await translateAndCacheBlocks(createdBlocks);
+    if (shouldAutoTranslateOnImport()) {
+      await setProgress(paperId, "TRANSLATING", 72);
+      await translateAndCacheBlocks(createdBlocks);
+    } else {
+      await setProgress(paperId, "READY", 92);
+    }
 
     await setProgress(paperId, "READY", 100, "READY");
   } catch (error) {

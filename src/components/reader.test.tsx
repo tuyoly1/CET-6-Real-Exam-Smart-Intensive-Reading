@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { Reader } from "@/components/reader";
 
@@ -40,11 +40,23 @@ function renderReader(sections: ComponentProps<typeof Reader>["initialSections"]
       }}
       initialSections={sections}
       initialTranslation={{ configured: true, message: "翻译接口已配置 · chat" }}
+      initialTranslationConfig={{
+        apiKeyConfigured: true,
+        maskedApiKey: "sk****test",
+        baseUrl: "https://api.example.com/v1",
+        apiMode: "chat",
+        translationModel: "gpt-test"
+      }}
     />
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  window.localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("Reader translation display", () => {
   it("shows question and option translations in contrast modes and hides them in hidden Chinese mode", () => {
@@ -224,5 +236,44 @@ describe("Reader translation display", () => {
     expect(screen.getByText("中国茶文化历史悠久。")).toBeInTheDocument();
     expect(screen.getByText("英文参考译文")).toBeInTheDocument();
     expect(screen.getByText("China's tea culture has a long history.")).toBeInTheDocument();
+  });
+
+  it("adds a clicked word to vocabulary cards with translation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ translation: "n. 信心；信任" })
+      }))
+    );
+
+    const { container } = renderReader([
+      {
+        id: "writing",
+        type: "writing",
+        title: "Part I Writing",
+        subtitle: null,
+        pageStart: 1,
+        pageEnd: 1,
+        orderIndex: 0,
+        blocks: [
+          block({
+            blockType: "paragraph",
+            originalText: "Students need confidence when identifying false information.",
+            translatedText: "学生在识别虚假信息时需要信心。",
+            orderIndex: 1
+          })
+        ]
+      }
+    ]);
+
+    const word = container.querySelector('.hover-word[data-word="confidence"]');
+    expect(word).not.toBeNull();
+
+    fireEvent.click(word as Element);
+
+    expect(screen.getByText("confidence")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("n. 信心；信任")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "导出卡片" })).toBeEnabled());
   });
 });

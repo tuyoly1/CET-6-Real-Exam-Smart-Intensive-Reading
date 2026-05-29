@@ -151,6 +151,14 @@ function median(values: number[]) {
   return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
+function minOf(values: number[]) {
+  return values.reduce((min, value) => Math.min(min, value), Number.POSITIVE_INFINITY);
+}
+
+function maxOf(values: number[]) {
+  return values.reduce((max, value) => Math.max(max, value), Number.NEGATIVE_INFINITY);
+}
+
 function readingLineTolerance(items: NormalizedPdfTextItem[]) {
   const heights = items.map((item) => item.height).filter((height) => height > 0);
   return Math.max(2, median(heights) * 0.65 || 0);
@@ -221,8 +229,8 @@ function buildReadingLines(items: NormalizedPdfTextItem[]) {
   for (const line of lines) {
     line.items.sort((a, b) => a.x - b.x || b.y - a.y || a.index - b.index);
     line.text = lineText(line.items);
-    line.x = Math.min(...line.items.map((item) => item.x));
-    line.maxX = Math.max(...line.items.map((item) => item.x + item.width));
+    line.x = minOf(line.items.map((item) => item.x));
+    line.maxX = maxOf(line.items.map((item) => item.x + item.width));
   }
 
   assignColumns(lines);
@@ -348,15 +356,29 @@ function assertReadableOcrResult(pageNumber: number, rawText: string, ocrText: s
   }
 }
 
-export function shouldRunOcr(text: string) {
-  const compact = text.replace(/\s/g, "");
-  if (compact.length < 80) return true;
+function ocrMode() {
+  return (process.env.PDF_OCR_MODE ?? "garbled").toLowerCase();
+}
 
+function ocrScale() {
+  const value = Number(process.env.PDF_OCR_SCALE);
+  return Number.isFinite(value) && value > 0 ? value : 1.5;
+}
+
+export function shouldRunOcr(text: string) {
+  const mode = ocrMode();
+  if (mode === "off" || mode === "false") return false;
+  if (mode === "always") return true;
+
+  const compact = text.replace(/\s/g, "");
+  if (!compact) return true;
+
+  if (mode === "auto" && compact.length < 80) return true;
   return detectGarbledText(text).garbled;
 }
 
 async function renderPageToPng(page: PDFPageProxy) {
-  const viewport = page.getViewport({ scale: 2 });
+  const viewport = page.getViewport({ scale: ocrScale() });
   const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
   const canvasContext = canvas.getContext("2d");
 
