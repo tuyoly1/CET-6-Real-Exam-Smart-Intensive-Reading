@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, DOMMatrix, DOMPoint, Path2D } from "@napi-rs/canvas";
 import type { PageSource } from "@prisma/client";
 import type { PDFPageProxy, RenderParameters } from "pdfjs-dist/types/src/display/api";
 
@@ -34,6 +34,12 @@ type ReadingLine = {
   y: number;
   column: number;
   order: number;
+};
+
+type CanvasGlobal = typeof globalThis & {
+  Path2D?: unknown;
+  DOMMatrix?: unknown;
+  DOMPoint?: unknown;
 };
 
 export type TextQualityReport = {
@@ -96,6 +102,14 @@ const COMMON_ENGLISH_WORDS = new Set([
   "with",
   "you"
 ]);
+
+function installCanvasGlobals() {
+  const canvasGlobal = globalThis as CanvasGlobal;
+  const target = canvasGlobal as Record<string, unknown>;
+  if (!target.Path2D) target.Path2D = Path2D;
+  if (!target.DOMMatrix) target.DOMMatrix = DOMMatrix;
+  if (!target.DOMPoint) target.DOMPoint = DOMPoint;
+}
 
 export function normalizeExtractedText(text: string) {
   let normalized = text
@@ -379,6 +393,7 @@ export function shouldRunOcr(text: string) {
 }
 
 async function renderPageToPng(page: PDFPageProxy) {
+  installCanvasGlobals();
   const viewport = page.getViewport({ scale: ocrScale() });
   const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
   const canvasContext = canvas.getContext("2d");
@@ -417,6 +432,7 @@ async function recognizePage(page: PDFPageProxy) {
 }
 
 export async function extractPdfPages(filePath: string, onProgress?: ProgressCallback) {
+  installCanvasGlobals();
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const data = await readFile(filePath);
   const standardFontDataUrl = `${path
