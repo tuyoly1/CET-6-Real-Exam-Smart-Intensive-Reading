@@ -82,8 +82,8 @@ const footerPatterns = [
   /^\d+$/,
   /^第\s*\d+\s*页\s*(?:共\s*\d+\s*页)?$/,
   /^\d{4}\s*年.*大学英语.*第\s*\d+\s*页\s*共\s*\d+\s*页/,
-  /^大学英语.*真[题感].*第\s*\d+\s*页/,
-  /^\d{4}\s*年.*英语\s*六\s*级\s*真[题感].*第\s*\d+\s*页\s*共\s*\d+\s*页/,
+  /^大学英语.*真[题感是].*第\s*\d+\s*页/,
+  /^\d{4}\s*年.*英语\s*六\s*级\s*真[题感是].*第\s*\d+\s*页\s*共\s*\d+\s*页/,
   /^Warning:\s+UnknownErrorException/i
 ];
 
@@ -101,7 +101,7 @@ export function normalizeCet6Line(text: string) {
     .replace(/\bf\s+our\b/gi, "four")
     .replace(/\bTum\b/g, "Turn")
     .replace(/\b1s\b/g, "is")
-    .replace(/\d{4}\s*年\s*\d{1,2}\s*月\s*(?:大学)?\s*英语\s*六\s*级\s*真[题感].*?第\s*\d+\s*页\s*共\s*\d+\s*页/gi, "")
+    .replace(/\d{4}\s*年\s*\d{1,2}\s*月\s*(?:大学)?\s*英语\s*六\s*级\s*真[题感是].*?第\s*\d+\s*页\s*共\s*\d+\s*页/gi, "")
     .replace(/([A-O])\)\s*/g, "$1) ")
     .replace(/\b(\d{1,2})\s+\./g, "$1.")
     .replace(/\s+([,.;:?!])/g, "$1")

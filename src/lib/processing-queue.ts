@@ -1,4 +1,5 @@
 import { processPaper } from "@/lib/processor";
+import os from "node:os";
 
 type QueueEntry = {
   paperId: string;
@@ -8,7 +9,23 @@ type QueueEntry = {
 const queue: string[] = [];
 const active = new Map<string, QueueEntry>();
 let running = false;
-const MAX_CONCURRENCY = Math.max(1, Number(process.env.IMPORT_PROCESSING_CONCURRENCY ?? 1));
+function defaultConcurrency() {
+  const cpuCount = os.cpus().length || 1;
+  if (cpuCount >= 8) return 2;
+  if (cpuCount >= 4) return 2;
+  return 1;
+}
+
+function processingConcurrency() {
+  const configured = process.env.IMPORT_PROCESSING_CONCURRENCY?.trim();
+  if (configured) {
+    const value = Number(configured);
+    if (Number.isFinite(value) && value > 0) return Math.max(1, Math.floor(value));
+  }
+  return defaultConcurrency();
+}
+
+const MAX_CONCURRENCY = processingConcurrency();
 
 async function runNext() {
   if (running) return;

@@ -381,7 +381,11 @@ function ocrMode() {
 
 function ocrScale() {
   const value = Number(process.env.PDF_OCR_SCALE);
-  return Number.isFinite(value) && value > 0 ? value : 1.5;
+  return Number.isFinite(value) && value > 0 ? value : 1.25;
+}
+
+function ocrLanguage() {
+  return process.env.PDF_OCR_LANG?.trim() || "eng+chi_sim";
 }
 
 export function shouldRunOcr(text: string) {
@@ -499,23 +503,71 @@ async function renderPageToPng(page: PDFPageProxy, filePath: string, pageNumber:
   }
 }
 
-async function recognizePage(page: PDFPageProxy, filePath: string, pageNumber: number) {
+type OcrRecognizer = {
+  recognize: (imagePath: string) => Promise<{ text: string; confidence?: number }>;
+  terminate?: () => Promise<void>;
+};
+
+async function createOcrRecognizer(): Promise<OcrRecognizer> {
   const Tesseract = await import("tesseract.js");
-  const recognize = Tesseract.recognize ?? Tesseract.default.recognize;
+  const language = ocrLanguage();
+  const createWorker = Tesseract.createWorker ?? Tesseract.default?.createWorker;
+  const recognize = Tesseract.recognize ?? Tesseract.default?.recognize;
+
+  if (!createWorker && !recognize) {
+    throw new Error("tesseract.js OCR API is unavailable");
+  }
+
+  if (createWorker) {
+    try {
+      const worker = await createWorker(language, 1, {
+        logger: () => undefined
+      });
+
+      return {
+        async recognize(imagePath: string) {
+          const result = await worker.recognize(imagePath);
+          return {
+            text: normalizeExtractedText(result.data.text),
+            confidence: result.data.confidence
+          };
+        },
+        async terminate() {
+          await worker.terminate?.();
+        }
+      };
+    } catch {
+      // Some tesseract.js versions or language-pack setups only support the
+      // one-shot recognize API. Fall through so OCR still works.
+    }
+  }
+
+  if (!recognize) {
+    throw new Error("tesseract.js recognize API is unavailable");
+  }
+
+  return {
+    async recognize(imagePath: string) {
+      const result = await recognize(imagePath, language, {
+        logger: () => undefined
+      });
+
+      return {
+        text: normalizeExtractedText(result.data.text),
+        confidence: result.data.confidence
+      };
+    }
+  };
+}
+
+async function recognizePage(page: PDFPageProxy, filePath: string, pageNumber: number, recognizer: OcrRecognizer) {
   const png = await renderPageToPng(page, filePath, pageNumber);
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "cet6-ocr-"));
   const imagePath = path.join(tempDir, `page-${Date.now()}.png`);
 
   try {
     await writeFile(imagePath, png);
-    const result = await recognize(imagePath, "eng+chi_sim", {
-      logger: () => undefined
-    });
-
-    return {
-      text: normalizeExtractedText(result.data.text),
-      confidence: result.data.confidence
-    };
+    return await recognizer.recognize(imagePath);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -537,46 +589,52 @@ export async function extractPdfPages(filePath: string, onProgress?: ProgressCal
   });
   const pdf = await loadingTask.promise;
   const pages: ExtractedPage[] = [];
+  let ocrRecognizer: OcrRecognizer | undefined;
 
-  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const textContent = await page.getTextContent();
-    const rawText = extractTextFromPdfTextItems(textContent.items);
-    const quality = detectGarbledText(rawText);
+  try {
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      const rawText = extractTextFromPdfTextItems(textContent.items);
+      const quality = detectGarbledText(rawText);
 
-    let source: PageSource = rawText ? "PDF_TEXT" : "EMPTY";
-    let ocrText: string | undefined;
-    let confidence: number | undefined;
+      let source: PageSource = rawText ? "PDF_TEXT" : "EMPTY";
+      let ocrText: string | undefined;
+      let confidence: number | undefined;
 
-    if (shouldRunOcr(rawText)) {
-      let ocr: { text: string; confidence?: number };
-      try {
-        ocr = await recognizePage(page, filePath, pageNumber);
-      } catch (error) {
-        if (!rawText || quality.garbled) {
-          throw new Error(ocrErrorMessage(pageNumber, error));
+      if (shouldRunOcr(rawText)) {
+        let ocr: { text: string; confidence?: number };
+        try {
+          ocrRecognizer ??= await createOcrRecognizer();
+          ocr = await recognizePage(page, filePath, pageNumber, ocrRecognizer);
+        } catch (error) {
+          if (!rawText || quality.garbled) {
+            throw new Error(ocrErrorMessage(pageNumber, error));
+          }
+          ocr = { text: "" };
         }
-        ocr = { text: "" };
+
+        ocrText = ocr.text;
+        confidence = ocr.confidence;
+        assertReadableOcrResult(pageNumber, rawText, ocrText, quality);
+        source = ocrText ? (quality.garbled || !rawText ? "OCR" : "MIXED") : source;
       }
 
-      ocrText = ocr.text;
-      confidence = ocr.confidence;
-      assertReadableOcrResult(pageNumber, rawText, ocrText, quality);
-      source = ocrText ? (quality.garbled || !rawText ? "OCR" : "MIXED") : source;
+      pages.push({
+        pageNumber,
+        rawText,
+        ocrText,
+        source,
+        confidence
+      });
+
+      await onProgress?.(pageNumber, pdf.numPages, source);
     }
-
-    pages.push({
-      pageNumber,
-      rawText,
-      ocrText,
-      source,
-      confidence
-    });
-
-    await onProgress?.(pageNumber, pdf.numPages, source);
+  } finally {
+    await loadingTask.destroy();
+    await ocrRecognizer?.terminate?.();
   }
 
-  await loadingTask.destroy();
   return pages;
 }
 
